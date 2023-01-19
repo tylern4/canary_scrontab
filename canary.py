@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 
+from datetime import datetime
 from pathlib import Path
 import time
 import logging
+import numpy as np
+import h5py
 
 from argparse import ArgumentParser
 import os
@@ -35,7 +38,7 @@ def count_files(canary_dir: Path, output):
     output["glob_start"] = time.perf_counter()
     out = canary_dir.glob("*")
     output["glob_end"] = time.perf_counter()
-    output["glob_count"] = len(list(out))
+    output["glob"] = len(list(out))
 
 
 def dir_size(canary_dir: Path, output):
@@ -43,15 +46,36 @@ def dir_size(canary_dir: Path, output):
     output["dir_size_start"] = time.perf_counter()
     out = [f.stat().st_size for f in all_files]
     output["dir_size_end"] = time.perf_counter()
-    output["dir_size_bytes"] = sum(out)
+    output["dir_size"] = sum(out)
+
+
+def write_bytes(canary_dir: Path, output, num_mb=10):
+    a = np.random.random(size=(4096, 4096))
+    test_file = Path(canary_dir / ".tempfile")
+    output["write_file_start"] = time.perf_counter()
+    h5f = h5py.File(test_file, 'w')
+    h5f.create_dataset('dataset_1', data=a)
+    h5f.close()
+    output["write_file_end"] = time.perf_counter()
+    logging.debug(f"File size: {test_file.stat().st_size} bytes")
+
+    output["write_file"] = test_file.stat().st_size
+    output["read_file"] = test_file.stat().st_size
+    output["read_file_start"] = time.perf_counter()
+    h5f = h5py.File(test_file, 'r')
+    b = h5f['dataset_1'][:]
+    h5f.close()
+    output["read_file_end"] = time.perf_counter()
+    test_file.unlink()
 
 
 def get_dir_contents(canary_dir: Path, file_name):
     output_file = FileWriter(file_name)
-    output = {"path": canary_dir.as_posix()}
+    output = {"@timestamp": str(datetime.now()), "path": canary_dir.as_posix()}
 
     count_files(canary_dir, output)
     dir_size(canary_dir, output)
+    write_bytes(canary_dir, output)
 
     output_file.write(output)
 
